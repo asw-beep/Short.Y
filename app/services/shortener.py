@@ -1,9 +1,12 @@
 import re
 
+import redis
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import cache as cache_mod
+from app.core.config import settings
 from app.models.url import URL
 from app.services import base62
 
@@ -58,3 +61,24 @@ def create_short_url(db: Session, long_url: str, custom_alias: str | None = None
 
 def get_by_code(db: Session, code: str) -> URL | None:
     return db.execute(select(URL).where(URL.short_code == code)).scalar_one_or_none()
+
+
+def resolve_long_url(db: Session, client: redis.Redis, code: str) -> str | None:
+    """Cache-aside lookup for the redirect path.
+
+    Returns the target URL, or None if the code is unknown. Redis errors are
+    intentionally NOT swallowed here — the caller is fail-closed (503), so they
+    propagate. Mappings are immutable, so TTL eviction is the only invalidation.
+    """
+    key = cache_mod.cache_key(code)
+    cached = client.get(key)  # may raise redis.RedisError -> caller returns 503
+    if cached is not None:
+        return None if cached == cache_mod.NEGATIVE else cached
+
+    url = get_by_code(db, code)
+    if url is None:
+        client.set(key, cache_mod.NEGATIVE, ex=settings.cache_negative_ttl_seconds)
+        return None
+
+    client.set(key, url.long_url, ex=settings.cache_ttl_seconds)
+    return url.long_url

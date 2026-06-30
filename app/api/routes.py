@@ -1,7 +1,9 @@
+import redis
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.core.cache import get_cache
 from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.url import ShortenRequest, ShortenResponse
@@ -41,8 +43,16 @@ def shorten(payload: ShortenRequest, db: Session = Depends(get_db)) -> ShortenRe
 
 
 @router.get("/{code}")
-def redirect(code: str, db: Session = Depends(get_db)) -> RedirectResponse:
-    url = shortener.get_by_code(db, code)
-    if url is None:
+def redirect(
+    code: str,
+    db: Session = Depends(get_db),
+    cache: redis.Redis = Depends(get_cache),
+) -> RedirectResponse:
+    try:
+        long_url = shortener.resolve_long_url(db, cache, code)
+    except redis.RedisError:
+        # Fail-closed: Redis is a hard dependency for redirects (ADR-003).
+        raise HTTPException(status_code=503, detail="Cache unavailable")
+    if long_url is None:
         raise HTTPException(status_code=404, detail="Short code not found")
-    return RedirectResponse(url=url.long_url, status_code=301)
+    return RedirectResponse(url=long_url, status_code=301)

@@ -14,12 +14,18 @@
    - Insert row with that `id` and `short_code`.
 5. Return `{ short_url, short_code, long_url }` where `short_url = BASE_URL + "/" + short_code`.
 
-## Redirect
+## Redirect (cache-aside, Phase 2)
 
 1. Client `GET /{code}`.
-2. Look up row by `short_code` (indexed).
-3. If miss → 404.
-4. If hit → 301 redirect to `long_url`. (301 = permanent, lets browsers cache and reduce load.)
+2. Look up `url:{code}` in Redis.
+   - **Hit (URL):** 301 redirect immediately — Postgres is never touched.
+   - **Hit (negative sentinel `\x00`):** 404 immediately — absorbs 404-enumeration scans.
+3. **Miss:** query Postgres by `short_code` (indexed).
+   - Found → `SET url:{code} = long_url` (TTL `cache_ttl_seconds`, default 3600) → 301.
+   - Not found → `SET url:{code} = \x00` (TTL `cache_negative_ttl_seconds`, default 60) → 404.
+4. **Redis unavailable:** the request **fails closed** → 503. Redis is a hard dependency for redirects (see ADR-003). Cache-aside logic lives in `shortener.resolve_long_url`; the route maps `None`→404 and `redis.RedisError`→503.
+
+301 = permanent, lets browsers cache and reduce load. Mappings are immutable, so no write-time invalidation is needed — TTL eviction is sufficient.
 
 ## Why 301?
 

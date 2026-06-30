@@ -30,10 +30,13 @@ services:
     environment:
       DATABASE_URL: postgresql://shortener:shortener@postgres:5432/shortener
       BASE_URL: http://localhost:8000
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./app:/code/app

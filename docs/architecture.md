@@ -1,23 +1,25 @@
 # Architecture
 
-## Phase 1 (current)
+## Phase 2 (current)
 
 ```
-Client → FastAPI → PostgreSQL
+Client → FastAPI → Redis → PostgreSQL   (architecture-v3)
 ```
 
-Single FastAPI service, single Postgres instance, no caching layer yet.
+Redirects are served cache-aside from Redis; writes (`POST /shorten`) go straight to Postgres. Redis is a hard dependency for the redirect path (fail-closed → 503 on outage). Rate limiting and the analytics worker (also Phase 2) are not yet built.
 
-## Planned
+## History / Planned
 
-- **Phase 2:** Add Redis (caching + rate limiting), analytics worker.
+- **Phase 1:** `Client → FastAPI → PostgreSQL` (no cache).
+- **Phase 2 (current):** Redis read-through cache for redirects. Next: rate limiting, analytics worker.
 - **Phase 3:** Add Nginx (reverse proxy + load balancing), full Docker deployment, stress testing.
 
-## Components (Phase 1)
+## Components
 
 | Component | Responsibility |
 |---|---|
 | FastAPI app | HTTP API: `POST /shorten`, `GET /{code}` |
+| Redis | Cache-aside store for `short_code → long_url` (positive + negative). Pooled client created in app lifespan; injected via `get_cache`. |
 | PostgreSQL | Persistent storage for URL mappings, source of monotonic IDs via sequence |
 | Alembic | Schema migrations |
 
