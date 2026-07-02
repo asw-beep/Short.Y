@@ -75,6 +75,23 @@ Two SlowAPI foot-guns and a routing-order trap:
 ## How do you keep sequence-derived codes deterministic in tests, now with a cache?
 Postgres `urls` is truncated with `RESTART IDENTITY` and Redis (test index `/1`) is `FLUSHDB`-ed between every test — so both the sequence and the cache start clean each test, keeping codes like `0000001` and cache assertions deterministic.
 
+## Why no frontend framework?
+Two pages: a form and a table. React/Vite would add a build step, `node_modules`,
+and a bundler for something plain HTML + `fetch()` handles in ~150 lines. The
+frontend is just another client of the same JSON API (`/shorten`, `/api/urls`) —
+no separate backend-for-frontend needed. Not the right call at scale, but at two
+pages it kept the "no build step" property honest.
+
+## What's the biggest security gap you'd fix before shipping the frontend publicly?
+There's no authentication anywhere in this codebase. `/list` and `/api/urls`
+**list every live URL mapping** — the real destination, not just the short code —
+to anyone who can reach the server. Before that page existed, an attacker had to
+guess sequential codes to find live links; now they can just read the table. I
+flagged this explicitly in the threat model and in the page itself rather than
+quietly shipping it, and the fix (Basic Auth or an API key in front of `/list`
+and `/api/urls`) is a clear, scoped next step — not built here because auth is
+outside the current EDD.
+
 ## What would you improve in V2?
 - Switch to random Base62 codes to remove enumeration risk.
 - Multi-region deployment with geo-DNS.

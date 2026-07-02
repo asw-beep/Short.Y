@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     # Rate limiting (Phase 2). Per-IP, moving-window. Tune per environment.
     rate_limit_shorten: str = "30/minute"
     rate_limit_redirect: str = "120/minute"
+    rate_limit_list: str = "60/minute"
     # Only trust X-Forwarded-For when fronted by a proxy we control (Phase 3 Nginx).
     trust_proxy: bool = False
 

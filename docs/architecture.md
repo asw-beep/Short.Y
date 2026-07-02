@@ -31,13 +31,16 @@ See `docs/diagrams/architecture-v3.md` for the Mermaid source.
   structured logging + health checks; click analytics worker; link expiration.
 - **Phase 3 — Scale:** hardened multi-stage non-root Docker image; CI
   (tests + bandit + pip-audit); Nginx reverse proxy / load-balancer at the edge.
+- **Addendum — Frontend:** minimal unauthenticated HTML/JS pages (shorten form,
+  live-links table). Scope amendment, not in the original EDD — see
+  `Instrcutions.md` addendum and ADR-012.
 
 ## Components
 
 | Component | Responsibility |
 |---|---|
 | **Nginx** | Reverse proxy / LB edge. Sets `X-Real-IP`/`X-Forwarded-*`, edge `limit_req`, load-balances the `shortener_api` upstream. `nginx/nginx.conf`. |
-| **FastAPI app** | HTTP API: `POST /shorten`, `GET /{code}`, `GET /stats/{code}`, `/livez`, `/health`. Rate limiting, logging, validation. |
+| **FastAPI app** | HTTP API: `POST /shorten`, `GET /{code}`, `GET /stats/{code}`, `GET /api/urls`, `/livez`, `/health`. Rate limiting, logging, validation. Also serves the frontend: `GET /`, `GET /list`, `/static/*`. |
 | **Redis** | (1) cache-aside `short_code → long_url` with negative/expired sentinels; (2) rate-limit buckets (moving-window); (3) `clicks:stream` analytics event log. Pooled client via app lifespan, injected with `get_cache`. |
 | **Analytics worker** | Standalone process (`python -m app.worker`). Consumer-group drain of `clicks:stream` → batch INSERT into `clicks`. |
 | **PostgreSQL** | Source of truth: `urls` (+ monotonic `urls_id_seq`) and `clicks`. |
@@ -52,7 +55,8 @@ app/
   models/               # SQLAlchemy: URL, Click
   schemas/              # Pydantic request/response
   core/                 # config, database, cache, ratelimit(+handler), logging
-  main.py               # app wiring, middleware, health
+  web/                  # frontend: index.html, list.html, static/style.css
+  main.py               # app wiring, middleware, health, frontend routes
   worker.py             # standalone analytics consumer
 ```
 

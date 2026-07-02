@@ -42,6 +42,22 @@
 - `GET /health` — readiness: pings Postgres + Redis; **503** if either is down
   (so a load balancer drops a degraded instance).
 
+## Frontend — `GET /`, `GET /list` (scope addendum, ADR-012)
+
+Plain HTML/CSS/JS, no build step, served directly by FastAPI.
+
+1. `GET /` — a form (`fetch`-posts to `POST /shorten`) that shows the resulting
+   short link + a copy button.
+2. `GET /list` — fetches `GET /api/urls?limit=&offset=` and renders a paginated
+   table: short URL, original URL, expiry (or "Never"). Reads Postgres directly
+   (not the redirect cache) — a low-traffic dashboard view, not the hot path.
+   Rows are built with `textContent`, never `innerHTML`, so a malicious
+   `long_url` can't inject markup into the page.
+3. **No authentication.** Anyone who can reach the deployment can see every live
+   mapping via this page or the API directly. See `threat-model.md` — this is
+   flagged as a real, larger information-disclosure surface than the pre-existing
+   code-enumeration risk, and is called out in the page itself.
+
 ## Design notes
 
 - **301 permanent:** mappings are immutable (aside from expiry), so a permanent

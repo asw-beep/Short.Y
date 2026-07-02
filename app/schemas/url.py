@@ -47,3 +47,17 @@ class StatsResponse(BaseModel):
     short_code: str
     total_clicks: int
     last_clicked_at: str | None
+
+
+class URLListItem(BaseModel):
+    short_code: str
+    short_url: str
+    long_url: str
+    expires_at: datetime | None
+    created_at: datetime
+
+
+class URLListResponse(BaseModel):
+    items: list[URLListItem]
+    limit: int
+    offset: int

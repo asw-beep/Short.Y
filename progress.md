@@ -51,3 +51,18 @@
   limiter hardened to prefer unspoofable `X-Real-IP`. ADR-011. Diagram v3.
 
 **Phase 3 complete.** All résumé-claimed features implemented + verified.
+
+---
+
+## Addendum — Minimal Frontend
+**Status: Complete ✓** (scope amendment requested by the user, day-10)
+
+- ✓ `GET /` shorten form, `GET /list` live-links table (short URL, original URL,
+  expiry), `GET /api/urls` (paginated JSON backing the table). Plain HTML/CSS/JS,
+  no build step, no auth. ADR-012.
+- **Flagged, not hidden:** `/list` + `/api/urls` are unauthenticated and expose
+  every live mapping — a bigger information-disclosure surface than the
+  pre-existing enumeration risk. See `docs/threat-model.md`. Do not expose this
+  deployment publicly without adding auth first.
+- 59/59 tests pass. Verified live in a real browser: shorten → redirect →
+  appears correctly in the table.

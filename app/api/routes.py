@@ -1,13 +1,19 @@
 import redis
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.cache import get_cache
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.ratelimit import limiter, redirect_limit, shorten_limit
-from app.schemas.url import ShortenRequest, ShortenResponse, StatsResponse
+from app.core.ratelimit import limiter, list_limit, redirect_limit, shorten_limit
+from app.schemas.url import (
+    ShortenRequest,
+    ShortenResponse,
+    StatsResponse,
+    URLListItem,
+    URLListResponse,
+)
 from app.services import analytics, shortener
 from app.services.shortener import (
     AliasInvalidError,
@@ -46,6 +52,35 @@ def shorten(
         long_url=url.long_url,
         expires_at=url.expires_at,
     )
+
+
+@router.get("/api/urls", response_model=URLListResponse)
+@limiter.limit(list_limit)
+def list_urls(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> URLListResponse:
+    """Live (non-expired) URLs for the /list dashboard.
+
+    NOTE — no auth (see docs/threat-model.md): this exposes every mapping's real
+    target. Acceptable for local/portfolio use; add auth before any real deploy.
+    `limit` is capped at 200 to blunt bulk scraping.
+    """
+    urls = shortener.list_live_urls(db, limit=limit, offset=offset)
+    items = [
+        URLListItem(
+            short_code=u.short_code,
+            short_url=f"{settings.base_url.rstrip('/')}/{u.short_code}",
+            long_url=u.long_url,
+            expires_at=u.expires_at,
+            created_at=u.created_at,
+        )
+        for u in urls
+    ]
+    return URLListResponse(items=items, limit=limit, offset=offset)
 
 
 @router.get("/stats/{code}", response_model=StatsResponse)

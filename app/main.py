@@ -1,11 +1,13 @@
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import redis
 import structlog
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -20,6 +22,8 @@ from app.core.ratelimit_handler import rate_limit_exceeded_handler
 
 configure_logging()
 log = get_logger("app")
+
+WEB_DIR = Path(__file__).parent / "web"
 
 
 @asynccontextmanager
@@ -102,7 +106,23 @@ def readiness(
     )
 
 
+# Frontend (plain HTML/CSS/JS, no build step). /static is CSS/JS assets; the two
+# pages are served directly. Registered — like /livez, /health — before the
+# catch-all GET /{code}, so "list" is also in RESERVED_WORDS (shortener.py).
+app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def index_page() -> FileResponse:
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/list", include_in_schema=False)
+def list_page() -> FileResponse:
+    return FileResponse(WEB_DIR / "list.html")
+
+
 # Registered last: the router owns the catch-all GET /{code}, which must not
-# shadow fixed system routes (/livez, /health, /shorten). Route matching is
-# registration-order, so fixed paths are declared before the catch-all.
+# shadow fixed system routes (/livez, /health, /shorten, /, /list). Route
+# matching is registration-order, so fixed paths are declared before the catch-all.
 app.include_router(router)

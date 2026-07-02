@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Short.Y</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <h1><a href="/">Short.Y</a></h1>
+    <nav class="links"><a href="/list">View all live links →</a></nav>
+  </header>
+
+  <div class="card">
+    <form id="shorten-form">
+      <label for="url">Original URL</label>
+      <input type="url" id="url" name="url" placeholder="https://example.com/a/very/long/path" required>
+
+      <label for="alias">Custom alias <span style="opacity:.6">(optional, 4–32 chars)</span></label>
+      <input type="text" id="alias" name="alias" placeholder="my-link" minlength="4" maxlength="32" pattern="[a-zA-Z0-9_-]+">
+
+      <label for="expires">Expires at <span style="opacity:.6">(optional)</span></label>
+      <input type="datetime-local" id="expires" name="expires">
+
+      <button type="submit" id="submit-btn">Shorten</button>
+    </form>
+
+    <div class="error" id="error-box"></div>
+
+    <div class="result" id="result-box">
+      <div class="row">
+        <a class="short-link" id="short-link" href="#" target="_blank" rel="noopener"></a>
+        <button class="copy-btn" id="copy-btn" type="button">Copy</button>
+      </div>
+      <div class="meta" id="result-meta"></div>
+    </div>
+  </div>
+
+  <p class="notice">
+    No login required — anyone with the link can use it. See
+    <a href="/docs" style="color:inherit">API docs</a> for programmatic access.
+  </p>
+</div>
+
+<script>
+const form = document.getElementById('shorten-form');
+const submitBtn = document.getElementById('submit-btn');
+const errorBox = document.getElementById('error-box');
+const resultBox = document.getElementById('result-box');
+const shortLink = document.getElementById('short-link');
+const resultMeta = document.getElementById('result-meta');
+const copyBtn = document.getElementById('copy-btn');
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.classList.add('show');
+  resultBox.classList.remove('show');
+}
+
+function clearError() {
+  errorBox.classList.remove('show');
+  errorBox.textContent = '';
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Shortening…';
+
+  const url = document.getElementById('url').value.trim();
+  const alias = document.getElementById('alias').value.trim();
+  const expires = document.getElementById('expires').value;
+
+  const payload = { url };
+  if (alias) payload.custom_alias = alias;
+  if (expires) payload.expires_at = new Date(expires).toISOString();
+
+  try {
+    const res = await fetch('/shorten', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      const detail = typeof data.detail === 'string'
+        ? data.detail
+        : (data.detail?.[0]?.msg || 'Something went wrong.');
+      showError(detail);
+      return;
+    }
+
+    shortLink.href = data.short_url;
+    shortLink.textContent = data.short_url;
+    resultMeta.textContent = data.expires_at
+      ? `Expires ${new Date(data.expires_at).toLocaleString()}`
+      : 'Never expires';
+    resultBox.classList.add('show');
+    form.reset();
+  } catch (err) {
+    showError('Network error — is the API reachable?');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Shorten';
+  }
+});
+
+copyBtn.addEventListener('click', async () => {
+  await navigator.clipboard.writeText(shortLink.href);
+  copyBtn.textContent = 'Copied!';
+  setTimeout(() => (copyBtn.textContent = 'Copy'), 1200);
+});
+</script>
+</body>
+</html>

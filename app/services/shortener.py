@@ -16,7 +16,7 @@ ALIAS_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,32}$")
 # Reserved words — flag for expansion as we add features
 RESERVED_WORDS = {
     "api", "admin", "health", "livez", "docs", "openapi", "redoc", "static",
-    "shorten", "stats",
+    "shorten", "stats", "list",
 }
 
 
@@ -75,6 +75,24 @@ def create_short_url(
 
 def get_by_code(db: Session, code: str) -> URL | None:
     return db.execute(select(URL).where(URL.short_code == code)).scalar_one_or_none()
+
+
+def list_live_urls(db: Session, limit: int = 50, offset: int = 0) -> list[URL]:
+    """Non-expired URLs, newest first, for the /list dashboard.
+
+    "Live" = expires_at is NULL (never expires) or still in the future. This
+    reads straight from Postgres (not the cache) — it's a low-traffic admin/
+    dashboard view, not the redirect hot path, so cache-aside isn't needed here.
+    """
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(URL)
+        .where((URL.expires_at.is_(None)) | (URL.expires_at > now))
+        .order_by(URL.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(db.execute(stmt).scalars().all())
 
 
 def resolve_long_url(db: Session, client: redis.Redis, code: str) -> str | None:

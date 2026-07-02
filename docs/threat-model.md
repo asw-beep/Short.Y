@@ -1,6 +1,7 @@
 # Threat Model
 
-Scope: Phase 2 (create + cache-aside redirect + per-route rate limiting).
+Scope: Phase 2 (create + cache-aside redirect + per-route rate limiting) + a
+minimal unauthenticated frontend (ADR-012, scope addendum requested by the user).
 
 | Threat | Status | Mitigation | Notes |
 |---|---|---|---|
@@ -25,3 +26,5 @@ Scope: Phase 2 (create + cache-aside redirect + per-route rate limiting).
 | Analytics PII collection | Mitigated (minimised) | Click events store `referrer` + `user_agent` (UA truncated to 512 chars). **Client IP is deliberately NOT stored.** | Referrer/UA are low-sensitivity; no IP linkage. If richer analytics is added, revisit retention + a privacy note. |
 | Analytics stream unbounded growth (worker down) | Mitigated | `XADD ... MAXLEN ~100000` caps stream size; old events trimmed. | A prolonged worker outage drops the oldest un-drained clicks (analytics is best-effort). |
 | Analytics event injection (header spoofing) | Accepted | `referrer`/`user_agent` come from client headers and are attacker-controlled, stored as-is. | They are only ever rendered as data in JSON stats, never executed/interpolated into SQL (ORM-parameterised). No stored-XSS sink in the API. |
+| **Unauthenticated bulk data exposure via `/list` + `/api/urls`** | **Accepted (P0 for any real deployment)** | None — no auth exists anywhere in this codebase (out of EDD scope). Mitigated only in *speed*: `limit` capped at 200, rate-limited (`rate_limit_list`, 60/min). | **This is qualitatively worse than the existing enumeration risk**: pre-frontend, an attacker had to *guess* sequential codes to find live URLs; `/api/urls` just **lists every live mapping** directly — no guessing needed. Do **not** expose this deployment publicly without adding authentication (e.g. Basic Auth / API key) in front of `/list` and `/api/urls`. Flagged in-page (`list.html` footer) and ADR-012. |
+| Stored-markup via `long_url`/aliases rendered in the frontend | Mitigated | `list.html` builds table rows via `textContent`/element properties, never `innerHTML` with server data — a `long_url` containing HTML/script cannot execute in the dashboard. | Applies to both the shorten-form result panel and the list table. |

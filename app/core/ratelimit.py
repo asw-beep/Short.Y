@@ -59,3 +59,7 @@ def shorten_limit() -> str:
 
 def redirect_limit() -> str:
     return settings.rate_limit_redirect
+
+
+def list_limit() -> str:
+    return settings.rate_limit_list
