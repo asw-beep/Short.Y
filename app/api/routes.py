@@ -1,11 +1,12 @@
 import redis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.cache import get_cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.ratelimit import limiter, redirect_limit, shorten_limit
 from app.schemas.url import ShortenRequest, ShortenResponse
 from app.services import shortener
 from app.services.shortener import (
@@ -21,7 +22,13 @@ def health() -> dict:
     return {"status": "ok"}
 
 @router.post("/shorten", response_model=ShortenResponse, status_code=status.HTTP_201_CREATED)
-def shorten(payload: ShortenRequest, db: Session = Depends(get_db)) -> ShortenResponse:
+@limiter.limit(shorten_limit)
+def shorten(
+    request: Request,
+    response: Response,
+    payload: ShortenRequest,
+    db: Session = Depends(get_db),
+) -> ShortenResponse:
     try:
         url = shortener.create_short_url(
             db,
@@ -43,7 +50,9 @@ def shorten(payload: ShortenRequest, db: Session = Depends(get_db)) -> ShortenRe
 
 
 @router.get("/{code}")
+@limiter.limit(redirect_limit)
 def redirect(
+    request: Request,
     code: str,
     db: Session = Depends(get_db),
     cache: redis.Redis = Depends(get_cache),

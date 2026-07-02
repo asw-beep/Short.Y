@@ -24,12 +24,17 @@
 ---
 
 ## Phase 2 — Performance (Redis cache, rate limiting, analytics worker)
-**Status: Not started**
+**Status: In progress**
+
+### Done
+- ✓ Redis cache-aside on `GET /{code}` (day-02) — negative caching, fail-closed.
+- ✓ Per-route rate limiting (day-03) — SlowAPI + Redis moving-window, per-IP,
+  XFF-aware, 429 + `Retry-After`. ADR-005.
 
 ### Planned
-- Redis cache on `GET /{code}` — check Redis before Postgres
-- Rate limiting on `POST /shorten` — by IP, using Redis
-- Analytics worker — async click tracking, `GET /stats/{code}` endpoint
+- Structured logging (`structlog`) + request IDs + readiness `/health`.
+- Analytics worker — Redis Streams → worker → Postgres `clicks`, `GET /stats/{code}`.
+- Expiration policies — `expires_at`, 410 on expired.
 
 ---
 

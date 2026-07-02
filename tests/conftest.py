@@ -1,5 +1,10 @@
 import os
 
+# Point the app at the isolated test Redis DB (/1) BEFORE importing anything that
+# reads settings — the rate limiter binds its storage backend at import time.
+# This keeps rate-limit buckets in the same DB that `cache_client` flushes.
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
+
 import pytest
 import redis as redis_lib
 from fastapi.testclient import TestClient

@@ -8,6 +8,12 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 3600
     cache_negative_ttl_seconds: int = 60
 
+    # Rate limiting (Phase 2). Per-IP, moving-window. Tune per environment.
+    rate_limit_shorten: str = "30/minute"
+    rate_limit_redirect: str = "120/minute"
+    # Only trust X-Forwarded-For when fronted by a proxy we control (Phase 3 Nginx).
+    trust_proxy: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 
