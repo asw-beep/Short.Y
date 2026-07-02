@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # Only trust X-Forwarded-For when fronted by a proxy we control (Phase 3 Nginx).
     trust_proxy: bool = False
 
+    # Observability
+    log_level: str = "INFO"
+    log_json: bool = True  # JSON in prod; set false for human-readable dev logs
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 

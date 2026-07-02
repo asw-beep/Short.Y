@@ -9,8 +9,15 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
+from app.core.logging import get_logger
+
+log = get_logger("security")
+
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    # Security event: a client hit its limit. request_id/client_ip/path are
+    # already bound to the log context by the request-logging middleware.
+    log.warning("rate_limit_exceeded", limit=str(exc.detail))
     response = JSONResponse(
         status_code=429,
         content={"detail": f"Rate limit exceeded: {exc.detail}"},

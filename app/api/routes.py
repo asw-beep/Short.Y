@@ -17,10 +17,6 @@ from app.services.shortener import (
 
 router = APIRouter()
 
-@router.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
-
 @router.post("/shorten", response_model=ShortenResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(shorten_limit)
 def shorten(

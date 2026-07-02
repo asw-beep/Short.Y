@@ -30,9 +30,10 @@
 - ✓ Redis cache-aside on `GET /{code}` (day-02) — negative caching, fail-closed.
 - ✓ Per-route rate limiting (day-03) — SlowAPI + Redis moving-window, per-IP,
   XFF-aware, 429 + `Retry-After`. ADR-005.
+- ✓ Structured logging + health checks (day-04) — structlog JSON, request IDs,
+  `/livez` liveness + `/health` readiness (DB+Redis), security event logs. ADR-006.
 
 ### Planned
-- Structured logging (`structlog`) + request IDs + readiness `/health`.
 - Analytics worker — Redis Streams → worker → Postgres `clicks`, `GET /stats/{code}`.
 - Expiration policies — `expires_at`, 410 on expired.
 
