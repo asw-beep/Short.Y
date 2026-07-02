@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: shortener
+          POSTGRES_DB: shortener
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shortener"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://shortener:shortener@localhost:5432/shortener_test
+      TEST_REDIS_URL: redis://localhost:6379/1
+      REDIS_URL: redis://localhost:6379/1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Create test database
+        run: |
+          python - <<'PY'
+          import psycopg2
+          conn = psycopg2.connect(
+              host="localhost", user="shortener", password="shortener", dbname="postgres"
+          )
+          conn.autocommit = True
+          cur = conn.cursor()
+          cur.execute("DROP DATABASE IF EXISTS shortener_test")
+          cur.execute("CREATE DATABASE shortener_test")
+          PY
+
+      - name: Run tests with coverage
+        run: pytest --cov=app --cov-report=term-missing -q
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install security tooling
+        run: pip install bandit==1.7.9 pip-audit==2.7.3
+
+      - name: Bandit (static analysis, blocking on medium+)
+        run: bandit -r app -ll
+
+      # Advisory: transitive CVEs shouldn't fail an unrelated feature PR, but they
+      # must stay visible. Review the report and bump deps as fixes land.
+      - name: pip-audit (dependency CVEs, advisory)
+        continue-on-error: true
+        run: pip-audit -r requirements.txt --desc

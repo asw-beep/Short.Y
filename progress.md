@@ -42,7 +42,11 @@
 ## Phase 3 — Scale (Nginx, full Docker, stress testing)
 **Status: In progress**
 
+### Done
+- ✓ Docker hardening (day-07) — multi-stage, non-root, `HEALTHCHECK`, env-based
+  secrets, worker service. ADR-009.
+- ✓ CI (day-08) — GitHub Actions: pytest+coverage (≈88%) on real PG/Redis, bandit
+  (blocking), pip-audit (advisory). ADR-010.
+
 ### Planned
-- Docker hardening — multi-stage build, non-root user, `HEALTHCHECK`.
-- CI — GitHub Actions: pytest + bandit + pip-audit.
 - Nginx reverse proxy in front of the API (+ diagram v3).
