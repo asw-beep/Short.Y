@@ -39,6 +39,13 @@ silent scope violation.
 - All DOM insertion in `list.html` uses `textContent`/property assignment, never
   `innerHTML` with server data, so a malicious `long_url` can't inject markup.
 
+**Theme:** light, cream background (`#f7f1e3`), olive-green accent family
+(`--accent`/`--success`), warm charcoal text — user-directed palette, not the
+original dark theme. Headings use a system serif stack (Georgia/Palatino) at a
+larger base size (18px) for a more editorial, "professional" feel; body/UI text
+uses a system sans stack. All system font stacks — no web-font download, works
+offline, no external CSP exception needed.
+
 **Security finding — flagged, not silently shipped:** `GET /list` and
 `GET /api/urls` are **unauthenticated** and expose every live mapping's real
 destination to anyone who can reach the deployment. This is a **new and larger**
