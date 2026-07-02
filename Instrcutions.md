@@ -414,4 +414,23 @@ Scale layer — Docker, Nginx load balancing, stress testing, architecture impro
 
 That progression gives you a clean story in interviews: first I built it, then I optimized it, then I scaled it. That's much stronger than starting with every tool under the sun on day one.
 
+---
+
+# Addendum: Scope Amendment — Minimal Frontend
+
+**Added 2026-07-02, requested directly by the user in-session** (the EDD's "if a
+feature isn't in this doc, don't build it" rule is enforced against silent scope
+creep, not against an explicit ask from the person who owns this document).
+
+**New goal:** a minimal frontend — no framework, no build step:
+- A page to submit a URL (with optional custom alias / expiry) and receive the
+  short link.
+- A page listing all **live** (non-expired) URLs: short URL, original URL,
+  expiration date.
+
+**Explicitly still non-goals:** authentication/authorization, a design system,
+client-side routing/SPA framework, and anything not needed for the two pages
+above. See `docs/adr/012-frontend.md` for the implementation and
+`docs/threat-model.md` for the resulting (unauthenticated data exposure) risk
+this introduces.
 

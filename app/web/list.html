@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Short.Y — All Links</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <h1><a href="/">Short.Y</a></h1>
+    <nav class="links"><a href="/">← Shorten a new link</a></nav>
+  </header>
+
+  <div class="toolbar">
+    <span class="notice" style="margin:0">Live links (not expired), newest first.</span>
+    <button class="ghost" id="refresh-btn" type="button">Refresh</button>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Short URL</th>
+          <th>Original URL</th>
+          <th>Expires</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty-state" id="empty-state" style="display:none">No live links yet — go shorten one.</div>
+  </div>
+
+  <div class="toolbar" style="margin-top:16px">
+    <button class="ghost" id="prev-btn" type="button">← Previous</button>
+    <span class="notice" id="page-info" style="margin:0"></span>
+    <button class="ghost" id="next-btn" type="button">Next →</button>
+  </div>
+
+  <p class="notice">
+    This page and <code>/api/urls</code> are unauthenticated — anyone with network
+    access to this deployment can see every live mapping here. Fine for local use;
+    add auth before exposing this publicly.
+  </p>
+</div>
+
+<script>
+const PAGE_SIZE = 25;
+let offset = 0;
+
+const rowsEl = document.getElementById('rows');
+const emptyState = document.getElementById('empty-state');
+const pageInfo = document.getElementById('page-info');
+const prevBtn = document.getElementById('prev-btn');
+const nextBtn = document.getElementById('next-btn');
+const refreshBtn = document.getElementById('refresh-btn');
+
+function fmtExpiry(iso) {
+  if (!iso) return { text: 'Never', cls: 'expiry-live' };
+  const d = new Date(iso);
+  const soon = d.getTime() - Date.now() < 24 * 60 * 60 * 1000;
+  return { text: d.toLocaleString(), cls: soon ? 'expiry-soon' : 'expiry-live' };
+}
+
+function td(text) {
+  const cell = document.createElement('td');
+  cell.textContent = text;
+  return cell;
+}
+
+function renderRow(item) {
+  const tr = document.createElement('tr');
+
+  const shortCell = document.createElement('td');
+  const a = document.createElement('a');
+  a.href = item.short_url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.textContent = item.short_url;
+  shortCell.appendChild(a);
+  tr.appendChild(shortCell);
+
+  const longCell = td(item.long_url);
+  longCell.className = 'url-cell';
+  longCell.title = item.long_url;
+  tr.appendChild(longCell);
+
+  const { text, cls } = fmtExpiry(item.expires_at);
+  const expiryCell = td(text);
+  expiryCell.className = cls;
+  tr.appendChild(expiryCell);
+
+  rowsEl.appendChild(tr);
+}
+
+async function load() {
+  rowsEl.innerHTML = '';
+  emptyState.style.display = 'none';
+
+  const res = await fetch(`/api/urls?limit=${PAGE_SIZE}&offset=${offset}`);
+  if (!res.ok) {
+    pageInfo.textContent = 'Failed to load.';
+    return;
+  }
+  const data = await res.json();
+
+  if (data.items.length === 0) {
+    emptyState.style.display = 'block';
+  } else {
+    data.items.forEach(renderRow);
+  }
+
+  pageInfo.textContent = `Showing ${offset + 1}–${offset + data.items.length}`;
+  prevBtn.disabled = offset === 0;
+  nextBtn.disabled = data.items.length < PAGE_SIZE;
+}
+
+prevBtn.addEventListener('click', () => {
+  offset = Math.max(0, offset - PAGE_SIZE);
+  load();
+});
+nextBtn.addEventListener('click', () => {
+  offset += PAGE_SIZE;
+  load();
+});
+refreshBtn.addEventListener('click', load);
+
+load();
+</script>
+</body>
+</html>

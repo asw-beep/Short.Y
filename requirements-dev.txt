@@ -1,0 +1,6 @@
+# Dev/CI-only tooling (kept out of the runtime image).
+-r requirements.txt
+
+pytest-cov==5.0.0
+bandit==1.7.9
+pip-audit==2.7.3

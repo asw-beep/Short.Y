@@ -1,0 +1,65 @@
+"""Per-route rate limiting (Phase 2, feature #2).
+
+Uses SlowAPI on top of a Redis storage backend so limits are enforced
+consistently across every FastAPI worker/replica (an in-process limiter would
+reset per worker and be trivially bypassed by load balancing). The moving-window
+strategy avoids the burst-at-boundary problem of fixed windows.
+
+Limits live in `settings` (not hard-coded in decorators) so they are tunable per
+environment and overridable in tests. Decorators reference them via callables so
+a settings change is picked up per request.
+"""
+from slowapi import Limiter
+from starlette.requests import Request
+
+from app.core.config import settings
+
+
+def client_ip(request: Request) -> str:
+    """Rate-limit key: the real client IP.
+
+    Behind a trusted reverse proxy (Phase 3 Nginx) the socket peer is the proxy,
+    so we must read the client from a forwarded header — but only when
+    `trust_proxy` is enabled, else a client could spoof it to dodge or poison a
+    bucket.
+
+    We prefer **X-Real-IP** over X-Forwarded-For. Our Nginx *sets* X-Real-IP to
+    the real TCP peer with `proxy_set_header`, which overwrites any client-sent
+    value, so it is not forgeable. X-Forwarded-For is appended to (via
+    `$proxy_add_x_forwarded_for`), so its left-most entry is still
+    client-controlled — using it as the key would reintroduce the spoof. XFF is
+    kept only as a fallback for proxies that don't set X-Real-IP.
+    """
+    if settings.trust_proxy:
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+limiter = Limiter(
+    key_func=client_ip,
+    storage_uri=settings.redis_url,
+    strategy="moving-window",
+    # Don't 500 the request if Redis is unreachable on the *create* path — a
+    # rate limiter outage should not take down the API. (The redirect path has
+    # its own fail-closed policy for the cache; see ADR-003.)
+    swallow_errors=True,
+    headers_enabled=True,
+)
+
+
+# Referenced as callables so tests can monkeypatch the values at runtime.
+def shorten_limit() -> str:
+    return settings.rate_limit_shorten
+
+
+def redirect_limit() -> str:
+    return settings.rate_limit_redirect
+
+
+def list_limit() -> str:
+    return settings.rate_limit_list

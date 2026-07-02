@@ -1,0 +1,59 @@
+# Render Blueprint (Infrastructure-as-Code). Deploy via: Render dashboard ->
+# New -> Blueprint -> point at this repo. See docs/deployment.md for the full
+# walkthrough, free-tier caveats, and why there's no separate worker service
+# (ADR-013: Background Workers aren't available on Render's free tier at all).
+#
+# Verify field names against https://render.com/docs/blueprint-spec before
+# deploying — this file was written against that spec as of mid-2026 and
+# Render's schema can change.
+
+databases:
+  - name: shorty-db
+    plan: free
+    databaseName: shortener
+    user: shortener
+
+services:
+  - type: keyvalue
+    name: shorty-redis
+    plan: free
+    ipAllowList: []   # no public access; only this Blueprint's own services can reach it
+
+  - type: web
+    name: shorty-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /livez
+    # Render injects $PORT (default 10000); override the image's CMD to bind to
+    # it and run migrations first. Falls back to 8000 if PORT is unset (local
+    # `docker build && docker run` without Render's env).
+    dockerCommand: >-
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: shorty-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: shorty-redis
+          property: connectionString
+      - key: LOG_JSON
+        value: "true"
+      # No separate worker on the free tier (ADR-013) — drain clicks in-process.
+      - key: ENABLE_INPROCESS_WORKER
+        value: "true"
+      # BASE_URL is intentionally omitted: app/core/config.py falls back to
+      # Render's auto-injected RENDER_EXTERNAL_URL when BASE_URL isn't set. Set
+      # BASE_URL explicitly here (or in the dashboard) once you attach a custom
+      # domain — an explicit value always wins over the fallback.
+      #
+      # TRUST_PROXY is left at its default (false). Render's edge proxy's
+      # X-Forwarded-For behavior isn't something this repo has verified against
+      # a live deployment — test it yourself (see docs/deployment.md) before
+      # flipping this on; an incorrect assumption here would make the rate
+      # limiter key on the wrong "client".
