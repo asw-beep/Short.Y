@@ -13,6 +13,7 @@ from app.services.shortener import (
     AliasInvalidError,
     AliasReservedError,
     AliasTakenError,
+    URLExpiredError,
 )
 
 router = APIRouter()
@@ -30,6 +31,7 @@ def shorten(
             db,
             long_url=str(payload.url),
             custom_alias=payload.custom_alias,
+            expires_at=payload.expires_at,
         )
     except AliasInvalidError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -42,6 +44,7 @@ def shorten(
         short_url=f"{settings.base_url.rstrip('/')}/{url.short_code}",
         short_code=url.short_code,
         long_url=url.long_url,
+        expires_at=url.expires_at,
     )
 
 
@@ -71,6 +74,8 @@ def redirect(
     except redis.RedisError:
         # Fail-closed: Redis is a hard dependency for redirects (ADR-003).
         raise HTTPException(status_code=503, detail="Cache unavailable")
+    except URLExpiredError:
+        raise HTTPException(status_code=410, detail="Short link has expired")
     if long_url is None:
         raise HTTPException(status_code=404, detail="Short code not found")
 

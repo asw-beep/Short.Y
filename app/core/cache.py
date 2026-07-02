@@ -9,6 +9,10 @@ KEY_PREFIX = "url:"
 # absorbed by Redis instead of hitting Postgres on every request.
 NEGATIVE = "\x00"
 
+# Sentinel for a code that exists but has expired — distinct from NEGATIVE so the
+# redirect path can return 410 Gone (not 404) straight from the cache.
+EXPIRED = "\x01"
+
 _pool: redis.ConnectionPool | None = None
 
 

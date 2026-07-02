@@ -24,7 +24,7 @@
 ---
 
 ## Phase 2 — Performance (Redis cache, rate limiting, analytics worker)
-**Status: In progress**
+**Status: Complete ✓**
 
 ### Done
 - ✓ Redis cache-aside on `GET /{code}` (day-02) — negative caching, fail-closed.
@@ -34,11 +34,15 @@
   `/livez` liveness + `/health` readiness (DB+Redis), security event logs. ADR-006.
 - ✓ Click analytics worker (day-05) — Redis Streams → consumer-group worker →
   Postgres `clicks`, `GET /stats/{code}`. ADR-007.
-
-### Planned
-- Expiration policies — `expires_at`, 410 on expired.
+- ✓ Link expiration (day-06) — `expires_at`, 410 Gone, cache TTL capped to expiry,
+  `EXPIRED` sentinel. ADR-008.
 
 ---
 
 ## Phase 3 — Scale (Nginx, full Docker, stress testing)
-**Status: Not started**
+**Status: In progress**
+
+### Planned
+- Docker hardening — multi-stage build, non-root user, `HEALTHCHECK`.
+- CI — GitHub Actions: pytest + bandit + pip-audit.
+- Nginx reverse proxy in front of the API (+ diagram v3).
