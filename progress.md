@@ -47,6 +47,7 @@
   secrets, worker service. ADR-009.
 - ✓ CI (day-08) — GitHub Actions: pytest+coverage (≈88%) on real PG/Redis, bandit
   (blocking), pip-audit (advisory). ADR-010.
+- ✓ Nginx reverse proxy (day-09) — edge proxy/LB, `limit_req`, `X-Real-IP`;
+  limiter hardened to prefer unspoofable `X-Real-IP`. ADR-011. Diagram v3.
 
-### Planned
-- Nginx reverse proxy in front of the API (+ diagram v3).
+**Phase 3 complete.** All résumé-claimed features implemented + verified.

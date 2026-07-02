@@ -1,34 +1,76 @@
 # Architecture
 
-## Phase 2 (current)
+## Current topology (Phase 3)
 
 ```
-Client → FastAPI → Redis → PostgreSQL   (architecture-v3)
+                          ┌─────────── Nginx (edge: TLS-term point, X-Real-IP, limit_req) ───────────┐
+Client ─────────────────► │                                                                          │
+                          └──────────────────────────────┬───────────────────────────────────────────┘
+                                                          ▼
+                                            FastAPI app (uvicorn, non-root container)
+                                            • per-route rate limiting (SlowAPI + Redis)
+                                            • structured logging + request IDs
+                                            • /livez (liveness), /health (readiness)
+                                                          │
+                          ┌───────────────────────────────┼───────────────────────────────┐
+                          ▼                                ▼                                ▼
+                     Redis  ◄── cache-aside ──►     Redis Streams  ── XADD ──►     PostgreSQL
+                 (short_code→long_url,           (clicks:stream)                 (urls, clicks)
+                  rate-limit buckets,                    │
+                  negative/expired                       ▼
+                  sentinels)                     Analytics Worker ── batch INSERT ──► PostgreSQL
+                                                 (XREADGROUP consumer group, XACK)
 ```
 
-Redirects are served cache-aside from Redis; writes (`POST /shorten`) go straight to Postgres. Redis is a hard dependency for the redirect path (fail-closed → 503 on outage). Rate limiting and the analytics worker (also Phase 2) are not yet built.
+See `docs/diagrams/architecture-v3.md` for the Mermaid source.
 
-## History / Planned
+## Build phases
 
-- **Phase 1:** `Client → FastAPI → PostgreSQL` (no cache).
-- **Phase 2 (current):** Redis read-through cache for redirects. Next: rate limiting, analytics worker.
-- **Phase 3:** Add Nginx (reverse proxy + load balancing), full Docker deployment, stress testing.
+- **Phase 1 — Core:** `Client → FastAPI → PostgreSQL`. Create + redirect, Base62.
+- **Phase 2 — Performance:** Redis cache-aside redirects; per-route rate limiting;
+  structured logging + health checks; click analytics worker; link expiration.
+- **Phase 3 — Scale:** hardened multi-stage non-root Docker image; CI
+  (tests + bandit + pip-audit); Nginx reverse proxy / load-balancer at the edge.
 
 ## Components
 
 | Component | Responsibility |
 |---|---|
-| FastAPI app | HTTP API: `POST /shorten`, `GET /{code}` |
-| Redis | Cache-aside store for `short_code → long_url` (positive + negative). Pooled client created in app lifespan; injected via `get_cache`. |
-| PostgreSQL | Persistent storage for URL mappings, source of monotonic IDs via sequence |
-| Alembic | Schema migrations |
+| **Nginx** | Reverse proxy / LB edge. Sets `X-Real-IP`/`X-Forwarded-*`, edge `limit_req`, load-balances the `shortener_api` upstream. `nginx/nginx.conf`. |
+| **FastAPI app** | HTTP API: `POST /shorten`, `GET /{code}`, `GET /stats/{code}`, `/livez`, `/health`. Rate limiting, logging, validation. |
+| **Redis** | (1) cache-aside `short_code → long_url` with negative/expired sentinels; (2) rate-limit buckets (moving-window); (3) `clicks:stream` analytics event log. Pooled client via app lifespan, injected with `get_cache`. |
+| **Analytics worker** | Standalone process (`python -m app.worker`). Consumer-group drain of `clicks:stream` → batch INSERT into `clicks`. |
+| **PostgreSQL** | Source of truth: `urls` (+ monotonic `urls_id_seq`) and `clicks`. |
+| **Alembic** | Schema migrations (`0001` urls, `0002` clicks, `0003` expires_at). |
+
+## Layering
+
+```
+app/
+  api/routes.py         # HTTP layer only — no SQL
+  services/             # business logic: shortener, analytics, base62
+  models/               # SQLAlchemy: URL, Click
+  schemas/              # Pydantic request/response
+  core/                 # config, database, cache, ratelimit(+handler), logging
+  main.py               # app wiring, middleware, health
+  worker.py             # standalone analytics consumer
+```
+
+Dependency injection throughout (`get_db`, `get_cache`), so every collaborator is
+overridable in tests. Configuration is a single `pydantic-settings` singleton.
 
 ## Data model
 
-`urls` table:
-
+`urls`:
 - `id BIGSERIAL PRIMARY KEY` — source for Base62 encoding
 - `short_code VARCHAR(32) UNIQUE NOT NULL` — indexed
 - `long_url TEXT NOT NULL`
 - `is_custom BOOLEAN NOT NULL DEFAULT FALSE`
 - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+- `expires_at TIMESTAMPTZ NULL` — NULL = never expires (Phase 2)
+
+`clicks` (written only by the worker):
+- `id BIGSERIAL PRIMARY KEY`
+- `short_code VARCHAR(32) NOT NULL` — indexed; composite `(short_code, clicked_at)`
+- `clicked_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+- `referrer TEXT NULL`, `user_agent TEXT NULL`

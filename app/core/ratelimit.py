@@ -19,11 +19,21 @@ def client_ip(request: Request) -> str:
     """Rate-limit key: the real client IP.
 
     Behind a trusted reverse proxy (Phase 3 Nginx) the socket peer is the proxy,
-    so the true client is the left-most entry of X-Forwarded-For. We only trust
-    that header when `trust_proxy` is enabled, otherwise a client could spoof
-    XFF to dodge or poison another IP's bucket.
+    so we must read the client from a forwarded header — but only when
+    `trust_proxy` is enabled, else a client could spoof it to dodge or poison a
+    bucket.
+
+    We prefer **X-Real-IP** over X-Forwarded-For. Our Nginx *sets* X-Real-IP to
+    the real TCP peer with `proxy_set_header`, which overwrites any client-sent
+    value, so it is not forgeable. X-Forwarded-For is appended to (via
+    `$proxy_add_x_forwarded_for`), so its left-most entry is still
+    client-controlled — using it as the key would reintroduce the spoof. XFF is
+    kept only as a fallback for proxies that don't set X-Real-IP.
     """
     if settings.trust_proxy:
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
             return forwarded.split(",")[0].strip()

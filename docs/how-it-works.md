@@ -1,38 +1,55 @@
 # How It Works
 
-## Create Short URL
+## Create Short URL — `POST /shorten`
 
-1. Client `POST /shorten` with `{ "url": "...", "custom_alias": "..." (optional) }`.
-2. Pydantic validates the URL: only `http`/`https` schemes, max 2048 chars.
-3. If `custom_alias` is provided:
-   - Regex check: 4–32 chars, `[a-zA-Z0-9_-]`.
-   - Reserved-word check against `RESERVED_WORDS` set.
-   - Insert row; UNIQUE constraint on `short_code` rejects duplicates → 409.
-4. Otherwise:
-   - `SELECT nextval('urls_id_seq')` to reserve an ID.
-   - Encode the ID to Base62, left-padded to 7 chars.
-   - Insert row with that `id` and `short_code`.
-5. Return `{ short_url, short_code, long_url }` where `short_url = BASE_URL + "/" + short_code`.
+1. **Rate limit** (SlowAPI, per-IP, moving-window; `rate_limit_shorten`, default
+   30/min). Over limit → **429** with `Retry-After`.
+2. Pydantic validates: only `http`/`https` schemes, max 2048 chars, optional
+   `expires_at` must be in the future (else 422).
+3. If `custom_alias` provided: regex `[a-zA-Z0-9_-]{4,32}`, reserved-word check,
+   insert; UNIQUE constraint rejects duplicates → **409** (no TOCTOU check).
+4. Otherwise: `SELECT nextval('urls_id_seq')` → Base62 (7 chars) → single INSERT.
+5. Return `{ short_url, short_code, long_url, expires_at }`.
 
-## Redirect (cache-aside, Phase 2)
+## Redirect — `GET /{code}` (cache-aside)
 
-1. Client `GET /{code}`.
-2. Look up `url:{code}` in Redis.
-   - **Hit (URL):** 301 redirect immediately — Postgres is never touched.
-   - **Hit (negative sentinel `\x00`):** 404 immediately — absorbs 404-enumeration scans.
-3. **Miss:** query Postgres by `short_code` (indexed).
-   - Found → `SET url:{code} = long_url` (TTL `cache_ttl_seconds`, default 3600) → 301.
-   - Not found → `SET url:{code} = \x00` (TTL `cache_negative_ttl_seconds`, default 60) → 404.
-4. **Redis unavailable:** the request **fails closed** → 503. Redis is a hard dependency for redirects (see ADR-003). Cache-aside logic lives in `shortener.resolve_long_url`; the route maps `None`→404 and `redis.RedisError`→503.
+1. **Rate limit** (`rate_limit_redirect`, default 120/min).
+2. Look up `url:{code}` in Redis:
+   - **URL value** → 301 immediately (Postgres untouched).
+   - **Negative sentinel `\x00`** → 404 immediately (absorbs enumeration scans).
+   - **Expired sentinel `\x01`** → 410 immediately.
+3. **Miss:** query Postgres by `short_code` (indexed):
+   - Not found → cache `\x00` (TTL `cache_negative_ttl_seconds`) → **404**.
+   - Found but `expires_at` past → cache `\x01` → **410 Gone**.
+   - Found & live → cache `long_url` with TTL `min(cache_ttl_seconds, time-to-expiry)`
+     → **301**.
+4. On a successful 301, **record a click**: best-effort `XADD` to `clicks:stream`
+   (referrer + truncated UA). Never blocks or fails the redirect.
+5. **Redis unavailable:** the redirect **fails closed** → 503 (ADR-003). The
+   limiter, by contrast, fails **open** (ADR-005).
 
-301 = permanent, lets browsers cache and reduce load. Mappings are immutable, so no write-time invalidation is needed — TTL eviction is sufficient.
+## Analytics — worker + `GET /stats/{code}`
 
-## Why 301?
+1. Each redirect appends an event to the Redis Stream `clicks:stream` (MAXLEN-capped).
+2. The **worker** (`python -m app.worker`) `XREADGROUP`s as a consumer group,
+   batch-INSERTs into `clicks`, and `XACK`s **after** the DB commit (at-least-once).
+3. `GET /stats/{code}` aggregates `COUNT` + `MAX(clicked_at)` from `clicks` —
+   **eventually consistent** (reflects drained events).
 
-Mappings are immutable in V1, so permanent redirect is correct semantically and reduces repeat traffic. Tradeoff: harder to "change a target" later — accepted.
+## Health
 
-## Why Base62 of auto-increment ID?
+- `GET /livez` — liveness, static, no I/O (container `HEALTHCHECK`).
+- `GET /health` — readiness: pings Postgres + Redis; **503** if either is down
+  (so a load balancer drops a degraded instance).
 
-- Simple — no collision logic needed; UNIQUE constraint on the column is a safety net.
-- Compact — 7 chars covers ~3.5 trillion IDs.
-- Tradeoff: codes are guessable/enumerable. Documented in `threat-model.md`; rate limiting (Phase 2) is the primary mitigation.
+## Design notes
+
+- **301 permanent:** mappings are immutable (aside from expiry), so a permanent
+  redirect is correct and reduces repeat traffic. Expiry is enforced at resolve
+  time and the cache TTL is capped so the cache can't outlive the mapping.
+- **Base62 of a sequence:** no collision logic; the UNIQUE column is a safety net;
+  7 chars ≈ 3.5T IDs. Codes are enumerable — bounded now by per-IP rate limiting
+  plus negative caching (see `threat-model.md`).
+- **Behind Nginx:** set `TRUST_PROXY=true` so the limiter keys on the real client.
+  The app prefers the unspoofable `X-Real-IP` (Nginx-set) over the appendable
+  `X-Forwarded-For`.

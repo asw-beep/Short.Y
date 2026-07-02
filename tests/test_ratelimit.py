@@ -46,6 +46,21 @@ def test_limits_are_per_ip(client, monkeypatch):
     assert client.post("/shorten", json={"url": "https://a.com/3"}, headers=h2).status_code == 201
 
 
+def test_xrealip_beats_spoofed_xff(client, monkeypatch):
+    """Behind a trusted proxy, the unspoofable X-Real-IP is the bucket key even
+    when the client injects a different left-most X-Forwarded-For."""
+    monkeypatch.setattr(settings, "rate_limit_shorten", "1/minute")
+    monkeypatch.setattr(settings, "trust_proxy", True)
+
+    # Real client is 10.0.0.7 (set by the proxy); the client tries to look like
+    # a fresh IP each request via XFF — it must not get a fresh bucket.
+    h_real = {"X-Real-IP": "10.0.0.7", "X-Forwarded-For": "1.1.1.1"}
+    h_spoof = {"X-Real-IP": "10.0.0.7", "X-Forwarded-For": "2.2.2.2"}
+
+    assert client.post("/shorten", json={"url": "https://a.com/1"}, headers=h_real).status_code == 201
+    assert client.post("/shorten", json={"url": "https://a.com/2"}, headers=h_spoof).status_code == 429
+
+
 def test_spoofed_xff_ignored_when_proxy_untrusted(client, monkeypatch):
     """With trust_proxy off, XFF is ignored so all requests share the peer bucket."""
     monkeypatch.setattr(settings, "rate_limit_shorten", "1/minute")

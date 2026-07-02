@@ -28,8 +28,49 @@ Phase 1 already handles this on a single Postgres node — 10M rows on an indexe
 - Read replicas for Postgres; sharding becomes relevant past ~1B rows.
 - The sequence becomes a bottleneck eventually — switch to random codes or sharded ID generation.
 
+## How does rate limiting work, and why per-IP with Redis?
+SlowAPI with a **Redis** storage backend and a **moving-window** strategy, applied
+per-route via decorators (30/min create, 120/min redirect). Redis storage means
+the limit is shared across every worker/replica — an in-process limiter resets per
+worker and is bypassed the moment you scale out. Moving-window avoids the
+fixed-window burst-at-boundary problem. The key is the client IP; behind Nginx we
+trust the **unspoofable `X-Real-IP`** (set by the proxy), not the appendable
+`X-Forwarded-For`. The limiter fails **open** on a Redis outage — the opposite of
+the redirect cache — because a limiter is protective, not correctness-critical.
+
+## Why an analytics worker instead of writing clicks inline?
+The redirect is the <100 ms hot path. A synchronous INSERT per click couples
+redirect latency to write-path health and burns the connection pool under
+read-heavy load. Instead the redirect does one best-effort `XADD` to a Redis
+Stream; a separate worker drains it with a **consumer group** (at-least-once,
+`XACK` after commit) and batch-inserts. Stats are eventually consistent — a fair
+trade to never block a redirect. Producing is best-effort so analytics can't break
+a redirect.
+
+## How is expiration enforced without a cleanup job?
+At **resolve time**: `expires_at` is authoritative in Postgres; an expired code
+returns **410 Gone**. A distinct `EXPIRED` cache sentinel makes repeat hits fast,
+and a live mapping's cache TTL is capped at `min(cache_ttl, time-to-expiry)` so the
+cache can never serve a link past its expiry. No sweeper, no expiry/delete race.
+
+## What's the observability story?
+`structlog` JSON logs with a per-request `request_id` bound via contextvars (so
+every line during a request carries it, including security events like
+`rate_limit_exceeded`). `/livez` is liveness (for the container probe), `/health`
+is readiness (pings Postgres+Redis, 503 when degraded, for the LB).
+
 ## What was the hardest bug?
-*(populate as work progresses)*
+Two SlowAPI foot-guns and a routing-order trap:
+1. **SlowAPI header injection** raised `parameter 'response' must be a Response`
+   whenever a limited endpoint returned a Pydantic model — fixed by adding a
+   `response: Response` param so the limiter has somewhere to write `X-RateLimit-*`.
+2. **Route shadowing:** defining `/livez` and `/health` *after* `include_router`
+   let the catch-all `GET /{code}` swallow them (404). Route matching is
+   registration-order, so fixed system routes must be registered before the
+   catch-all.
+3. **XFF spoofing behind Nginx:** live-testing showed a client could still spoof
+   its rate-limit bucket via `X-Forwarded-For` (Nginx *appends*, leftmost stays
+   client-controlled). Fixed by preferring the Nginx-set `X-Real-IP`.
 
 ## How do you keep sequence-derived codes deterministic in tests, now with a cache?
 Postgres `urls` is truncated with `RESTART IDENTITY` and Redis (test index `/1`) is `FLUSHDB`-ed between every test — so both the sequence and the cache start clean each test, keeping codes like `0000001` and cache assertions deterministic.
