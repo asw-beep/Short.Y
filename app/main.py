@@ -1,3 +1,4 @@
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,10 +16,12 @@ from sqlalchemy.orm import Session
 from app.api.routes import router
 from app.core import cache
 from app.core.cache import get_cache
-from app.core.database import get_db
+from app.core.config import settings
+from app.core.database import SessionLocal, get_db
 from app.core.logging import configure_logging, get_logger
 from app.core.ratelimit import client_ip, limiter
 from app.core.ratelimit_handler import rate_limit_exceeded_handler
+from app.services import analytics
 
 configure_logging()
 log = get_logger("app")
@@ -30,7 +33,25 @@ WEB_DIR = Path(__file__).parent / "web"
 async def lifespan(app: FastAPI):
     cache.init_pool()
     log.info("startup_complete")
+
+    stop_event = asyncio.Event()
+    worker_task: asyncio.Task | None = None
+    if settings.enable_inprocess_worker:
+        # No separate worker process here (e.g. Render free tier — ADR-013):
+        # drain the click stream inside this process instead.
+        worker_task = asyncio.create_task(
+            analytics.run_inprocess_worker(cache.get_client(), SessionLocal, stop_event)
+        )
+        log.info("inprocess_analytics_worker_enabled")
+
     yield
+
+    if worker_task is not None:
+        stop_event.set()
+        try:
+            await asyncio.wait_for(worker_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            worker_task.cancel()
     cache.close_pool()
 
 

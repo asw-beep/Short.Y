@@ -31,8 +31,16 @@
 ## Analytics — worker + `GET /stats/{code}`
 
 1. Each redirect appends an event to the Redis Stream `clicks:stream` (MAXLEN-capped).
-2. The **worker** (`python -m app.worker`) `XREADGROUP`s as a consumer group,
-   batch-INSERTs into `clicks`, and `XACK`s **after** the DB commit (at-least-once).
+2. The **worker** (`python -m app.worker`, a separate process — this is what
+   Docker Compose runs) `XREADGROUP`s as a consumer group, batch-INSERTs into
+   `clicks`, and `XACK`s **after** the DB commit (at-least-once).
+   - **Render deployment (ADR-013):** no separate worker process (Render's free
+     tier has no Background Workers at all). Instead `ENABLE_INPROCESS_WORKER=true`
+     runs the identical drain logic as an asyncio task inside the web process
+     (`analytics.run_inprocess_worker`), using a distinct consumer name
+     (`web-inprocess` vs `worker-1`) so both can safely coexist if ever run
+     together — Redis consumer groups guarantee exactly one consumer claims each
+     pending message regardless of name.
 3. `GET /stats/{code}` aggregates `COUNT` + `MAX(clicked_at)` from `clicks` —
    **eventually consistent** (reflects drained events).
 

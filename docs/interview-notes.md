@@ -92,6 +92,28 @@ quietly shipping it, and the fix (Basic Auth or an API key in front of `/list`
 and `/api/urls`) is a clear, scoped next step — not built here because auth is
 outside the current EDD.
 
+## Why doesn't the deployed version run the worker as a separate process?
+Render's free tier doesn't offer Background Workers at any price point —
+they're paid-only. Rather than silently ship a demo where clicks queue forever
+and `/stats` always reads zero, I ran the identical drain logic
+(`process_batch`) as an asyncio task inside the web process instead, gated
+behind `ENABLE_INPROCESS_WORKER` so local Docker Compose is unaffected (it still
+runs a real separate `worker` container). The in-process task uses a different
+consumer name than the standalone worker so both can safely coexist — Redis
+Streams consumer groups guarantee exactly one consumer claims each pending
+message regardless of name, which I verified live (stopped the standalone
+worker, confirmed the in-process task alone logged `clicks_persisted`). This is
+a deliberate, documented architecture deviation for one specific deployment
+target, not a silent shortcut — see ADR-013.
+
+## How do shortened links avoid pointing at localhost once deployed?
+`BASE_URL` defaults to `http://localhost:8000` for local dev, but a
+`model_validator` in `app/core/config.py` adopts Render's auto-injected
+`RENDER_EXTERNAL_URL` env var whenever `BASE_URL` was never explicitly set — so
+`POST /shorten` responses reflect the real `*.onrender.com` domain with zero
+manual configuration on first deploy. An explicitly set `BASE_URL` (e.g. after
+attaching a custom domain) always wins over that fallback.
+
 ## What would you improve in V2?
 - Switch to random Base62 codes to remove enumeration risk.
 - Multi-region deployment with geo-DNS.

@@ -66,3 +66,22 @@
   deployment publicly without adding auth first.
 - 59/59 tests pass. Verified live in a real browser: shorten → redirect →
   appears correctly in the table.
+
+---
+
+## Addendum — Deployability (Render Blueprint)
+**Status: Config complete ✓, actual deploy pending** (user feedback, day-11)
+
+- ✓ `render.yaml` Blueprint: free web + free Postgres + free Redis
+  (`ipAllowList: []`). No separate worker or Nginx service (ADR-013).
+- ✓ `BASE_URL` auto-adopts Render's `RENDER_EXTERNAL_URL` when unset — short
+  links reflect the real deployed domain automatically.
+- ✓ In-process analytics worker fallback (`ENABLE_INPROCESS_WORKER`) for
+  Render's free tier, which has no Background Workers at all. Docker Compose
+  unaffected (still runs the real separate `worker` container).
+- ✓ `docs/deployment.md` — walkthrough + free-tier caveats (Postgres 30-day
+  expiry, cold starts, unverified Render proxy headers).
+- 64/64 tests pass. Verified live: in-process worker drains clicks correctly
+  both alongside and in isolation from the standalone worker container.
+- **Not done:** actually creating the Render account and clicking deploy — the
+  user's action. README's "Live Demo" section is a placeholder until then.

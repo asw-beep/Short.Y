@@ -16,8 +16,17 @@ Why a stream and not a synchronous INSERT on the redirect path:
 Producing is best-effort: analytics must never break a redirect, so `record_click`
 swallows Redis errors (they're logged). Losing a click is acceptable; failing a
 redirect is not.
+
+**In-process variant (ADR-013):** on Render's free tier, a separate Background
+Worker service isn't available at all (paid-only), so `run_inprocess_worker`
+runs the same drain logic as an asyncio task inside the web process instead —
+gated behind `ENABLE_INPROCESS_WORKER` so local Docker Compose (which does run a
+real separate `worker` process) is unaffected. It uses a distinct consumer name
+so the two paths never collide if both were ever pointed at the same stream.
 """
+import asyncio
 from datetime import datetime, timezone
+from typing import Callable
 
 import redis
 from sqlalchemy import func, select
@@ -32,6 +41,7 @@ log = get_logger("analytics")
 STREAM = "clicks:stream"
 GROUP = "analytics"
 CONSUMER = "worker-1"
+INPROCESS_CONSUMER = "web-inprocess"
 
 # Redis-side truncation: an approximate cap so an offline worker can't let the
 # stream grow without bound. '~' lets Redis trim efficiently at node boundaries.
@@ -73,14 +83,22 @@ def _parse_ts(raw: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
-def process_batch(db: Session, client: redis.Redis, count: int = 100, block_ms: int = 5000) -> int:
+def process_batch(
+    db: Session,
+    client: redis.Redis,
+    count: int = 100,
+    block_ms: int = 5000,
+    consumer: str = CONSUMER,
+) -> int:
     """Consume up to `count` pending events, persist them, and ack.
 
     Returns the number of events processed. Split out from the run loop so it is
-    unit-testable with the same DB/redis fixtures the API tests use.
+    unit-testable with the same DB/redis fixtures the API tests use. `consumer`
+    is overridable so the in-process variant (`run_inprocess_worker`) uses a
+    distinct name from the standalone `app.worker` process.
     """
     ensure_group(client)
-    resp = client.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=count, block=block_ms)
+    resp = client.xreadgroup(GROUP, consumer, {STREAM: ">"}, count=count, block=block_ms)
     if not resp:
         return 0
 
@@ -107,6 +125,39 @@ def process_batch(db: Session, client: redis.Redis, count: int = 100, block_ms: 
         log.info("clicks_persisted", count=len(rows))
 
     return len(rows)
+
+
+async def run_inprocess_worker(
+    client: redis.Redis,
+    session_factory: Callable[[], Session],
+    stop_event: asyncio.Event,
+    poll_interval: float = 2.0,
+) -> None:
+    """Drain the click stream from inside the web process (ADR-013).
+
+    Runs `process_batch` in a thread per iteration via `asyncio.to_thread` so the
+    blocking Redis/DB calls never stall the event loop serving HTTP requests.
+    `session_factory` is injectable (real `SessionLocal` in production, the test
+    session in tests) — same DI pattern as `get_db`/`get_cache`.
+    """
+    log.info("inprocess_worker_started")
+    while not stop_event.is_set():
+        db = session_factory()
+        try:
+            await asyncio.to_thread(
+                process_batch,
+                db,
+                client,
+                count=100,
+                block_ms=int(poll_interval * 1000),
+                consumer=INPROCESS_CONSUMER,
+            )
+        except Exception:
+            log.exception("inprocess_worker_batch_failed")
+            db.rollback()
+        finally:
+            db.close()
+    log.info("inprocess_worker_stopped")
 
 
 def get_stats(db: Session, code: str) -> dict:
