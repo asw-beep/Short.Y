@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: shortener
-      POSTGRES_PASSWORD: shortener
-      POSTGRES_DB: shortener
+      POSTGRES_USER: ${POSTGRES_USER:-shortener}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shortener}
+      POSTGRES_DB: ${POSTGRES_DB:-shortener}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U shortener"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shortener}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -28,9 +28,11 @@ services:
   api:
     build: .
     environment:
-      DATABASE_URL: postgresql://shortener:shortener@postgres:5432/shortener
-      BASE_URL: http://localhost:8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shortener}:${POSTGRES_PASSWORD:-shortener}@postgres:5432/${POSTGRES_DB:-shortener}
+      BASE_URL: ${BASE_URL:-http://localhost:8000}
       REDIS_URL: redis://redis:6379/0
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      LOG_JSON: ${LOG_JSON:-true}
     ports:
       - "8000:8000"
     depends_on:
@@ -42,6 +44,13 @@ services:
       - ./app:/code/app
       - ./alembic:/code/alembic
       - ./alembic.ini:/code/alembic.ini
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/livez', timeout=2).status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    # Dev override of the image's production CMD: run migrations then hot-reload.
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -49,17 +58,22 @@ services:
   worker:
     build: .
     environment:
-      DATABASE_URL: postgresql://shortener:shortener@postgres:5432/shortener
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shortener}:${POSTGRES_PASSWORD:-shortener}@postgres:5432/${POSTGRES_DB:-shortener}
       REDIS_URL: redis://redis:6379/0
+      LOG_JSON: ${LOG_JSON:-true}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       api:
-        condition: service_started  # api runs migrations before the worker needs the clicks table
+        condition: service_healthy  # api runs migrations; wait until it's ready
     volumes:
       - ./app:/code/app
+    # The worker doesn't serve HTTP, so the image's /livez HEALTHCHECK is wrong
+    # for it — disable rather than inherit a probe that always fails.
+    healthcheck:
+      disable: true
     command: ["python", "-m", "app.worker"]
 
 volumes:
