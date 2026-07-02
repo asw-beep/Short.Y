@@ -14,7 +14,8 @@ ALIAS_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,32}$")
 
 # Reserved words — flag for expansion as we add features
 RESERVED_WORDS = {
-    "api", "admin", "health", "docs", "openapi", "redoc", "static", "shorten",
+    "api", "admin", "health", "livez", "docs", "openapi", "redoc", "static",
+    "shorten", "stats",
 }
 
 

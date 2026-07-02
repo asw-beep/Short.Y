@@ -43,7 +43,7 @@ def _setup_db():
 def db_session():
     session = TestSession()
     try:
-        session.execute(text("TRUNCATE TABLE urls RESTART IDENTITY CASCADE"))
+        session.execute(text("TRUNCATE TABLE urls, clicks RESTART IDENTITY CASCADE"))
         session.commit()
         yield session
     finally:

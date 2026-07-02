@@ -7,8 +7,8 @@ from app.core.cache import get_cache
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.ratelimit import limiter, redirect_limit, shorten_limit
-from app.schemas.url import ShortenRequest, ShortenResponse
-from app.services import shortener
+from app.schemas.url import ShortenRequest, ShortenResponse, StatsResponse
+from app.services import analytics, shortener
 from app.services.shortener import (
     AliasInvalidError,
     AliasReservedError,
@@ -45,6 +45,19 @@ def shorten(
     )
 
 
+@router.get("/stats/{code}", response_model=StatsResponse)
+@limiter.limit(redirect_limit)
+def stats(
+    request: Request,
+    response: Response,
+    code: str,
+    db: Session = Depends(get_db),
+) -> StatsResponse:
+    """Aggregated click stats. Eventually consistent: reflects events already
+    drained from the stream by the analytics worker."""
+    return StatsResponse(**analytics.get_stats(db, code))
+
+
 @router.get("/{code}")
 @limiter.limit(redirect_limit)
 def redirect(
@@ -60,4 +73,12 @@ def redirect(
         raise HTTPException(status_code=503, detail="Cache unavailable")
     if long_url is None:
         raise HTTPException(status_code=404, detail="Short code not found")
+
+    # Record the click for analytics — best-effort, off the critical path.
+    analytics.record_click(
+        cache,
+        code=code,
+        referrer=request.headers.get("referer"),
+        user_agent=request.headers.get("user-agent"),
+    )
     return RedirectResponse(url=long_url, status_code=301)

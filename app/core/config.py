@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = True  # JSON in prod; set false for human-readable dev logs
 
+    # Analytics (Redis Stream + worker)
+    analytics_stream_maxlen: int = 100_000  # approx cap so an offline worker can't OOM Redis
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 

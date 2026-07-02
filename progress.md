@@ -32,9 +32,10 @@
   XFF-aware, 429 + `Retry-After`. ADR-005.
 - ✓ Structured logging + health checks (day-04) — structlog JSON, request IDs,
   `/livez` liveness + `/health` readiness (DB+Redis), security event logs. ADR-006.
+- ✓ Click analytics worker (day-05) — Redis Streams → consumer-group worker →
+  Postgres `clicks`, `GET /stats/{code}`. ADR-007.
 
 ### Planned
-- Analytics worker — Redis Streams → worker → Postgres `clicks`, `GET /stats/{code}`.
 - Expiration policies — `expires_at`, 410 on expired.
 
 ---

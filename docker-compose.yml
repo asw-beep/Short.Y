@@ -46,5 +46,21 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
+  worker:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://shortener:shortener@postgres:5432/shortener
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started  # api runs migrations before the worker needs the clicks table
+    volumes:
+      - ./app:/code/app
+    command: ["python", "-m", "app.worker"]
+
 volumes:
   postgres_data:
