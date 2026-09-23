@@ -12,12 +12,17 @@ and a live-links table — no framework, no build step, no auth.
 
 ## Live Demo
 
-**Not yet deployed.** `render.yaml` + `docs/deployment.md` make this a
-few-clicks deploy on Render (free tier) — see **Deploy** below. Once deployed,
-replace this line with the real `https://...onrender.com` (or custom domain)
-link. Don't link a `localhost` URL here — it isn't reachable by anyone else.
+**Live at <https://shorty-api-z85h.onrender.com>** (Render free tier; deployed
+2026-09-23 from `render.yaml`, see **Deploy** below).
 
-- API docs (Swagger/OpenAPI): add once deployed, e.g. `https://<your-app>/docs`
+- Shorten a URL: <https://shorty-api-z85h.onrender.com/> · live links table:
+  <https://shorty-api-z85h.onrender.com/list>
+- API docs (Swagger/OpenAPI): <https://shorty-api-z85h.onrender.com/docs>
+- Health: <https://shorty-api-z85h.onrender.com/health>
+
+> Free tier: the first request after ~15 min idle cold-starts (up to ~60s).
+> The free Postgres expires 2026-10-23 (deleted after a 14-day grace period)
+> unless upgraded — see [`docs/deployment.md`](docs/deployment.md).
 - Architecture: [`docs/architecture.md`](docs/architecture.md) ·
   [`docs/diagrams/architecture-v3.md`](docs/diagrams/architecture-v3.md)
 

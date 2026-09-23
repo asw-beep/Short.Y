@@ -1,7 +1,8 @@
 # ADR 013 — Render Deployment (Blueprint, In-Process Analytics Worker)
 
-**Status:** Implemented. Config only — actually deploying (creating the Render
-account/Blueprint) is the user's action, not something this session performs.
+**Status:** Implemented and deployed (2026-09-23) —
+<https://shorty-api-z85h.onrender.com>. See `docs/deployment.md` → Current
+deployment, and day-12 for the `$PORT` fix the first deploy needed.
 
 **Context:** a URL shortener whose only working links are `localhost` isn't a
 credible resume artifact — a recruiter can't click it. This ADR documents

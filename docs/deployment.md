@@ -5,6 +5,16 @@ actually work when someone clicks it days or months later — this doc covers
 deploying to [Render](https://render.com) using the `render.yaml` Blueprint at
 the repo root, and the real caveats of doing that on the free tier.
 
+## Current deployment
+
+| | |
+|---|---|
+| Live URL | <https://shorty-api-z85h.onrender.com> |
+| Deployed | 2026-09-23, Blueprint `shorty` (region: Oregon), commit `108a2d6` |
+| Resources | `shorty-api` (web, Docker), `shorty-db` (PostgreSQL 18), `shorty-redis` (Key Value / Valkey 8) — all free plan |
+| Free Postgres expires | **2026-10-23**, then 14-day grace, then deleted (~2026-11-06) unless upgraded |
+| Verified live | `/livez` ok · `/health` → database ok, redis ok · `POST /shorten` returns an `onrender.com` short URL · `GET /{code}` → 301 to the original URL · `/stats/{code}` counted the click (in-process worker draining) · `/`, `/list`, `/docs` → 200 |
+
 ## Why Render, and why the architecture differs slightly here
 
 - `render.yaml` defines: a **web service** (the FastAPI app), a **free
@@ -39,9 +49,20 @@ the repo root, and the real caveats of doing that on the free tier.
    curl -sX POST https://<your-app>.onrender.com/shorten \
      -H "Content-Type: application/json" -d '{"url":"https://github.com/openai"}'
    # -> {"short_url":"https://<your-app>.onrender.com/XXXXXXX", ...}
-   curl -sI https://<your-app>.onrender.com/XXXXXXX
-   # -> HTTP/2 301, location: https://github.com/openai
+   curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" https://<your-app>.onrender.com/XXXXXXX
+   # -> 301 -> https://github.com/openai
    ```
+   Use a GET, not `curl -I`: the redirect route is GET-only, so a HEAD request
+   returns `405 Method Not Allowed` even when the redirect works.
+
+### Gotcha: `$PORT` in `dockerCommand`
+
+Render substitutes environment variables into `dockerCommand` itself, before
+the shell runs, and it doesn't understand shell default syntax. The first
+deploy used `--port ${PORT:-8000}`, which Render turned into `10000:-8000}`,
+so uvicorn exited with status 2 (after migrations had already run). The
+Blueprint now uses plain `--port $PORT`. That's safe because this command only
+runs on Render, where `PORT` is always set.
 
 ## Free-tier caveats — read before linking this from a résumé
 

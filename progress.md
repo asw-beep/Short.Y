@@ -70,7 +70,8 @@
 ---
 
 ## Addendum — Deployability (Render Blueprint)
-**Status: Config complete ✓, actual deploy pending** (user feedback, day-11)
+**Status: Deployed ✓** — live at <https://shorty-api-z85h.onrender.com>
+(2026-09-23, day-12)
 
 - ✓ `render.yaml` Blueprint: free web + free Postgres + free Redis
   (`ipAllowList: []`). No separate worker or Nginx service (ADR-013).
@@ -83,5 +84,9 @@
   expiry, cold starts, unverified Render proxy headers).
 - 64/64 tests pass. Verified live: in-process worker drains clicks correctly
   both alongside and in isolation from the standalone worker container.
-- **Not done:** actually creating the Render account and clicking deploy — the
-  user's action. README's "Live Demo" section is a placeholder until then.
+- ✓ Deployed via Render Blueprint on 2026-09-23. First deploy failed on a
+  `${PORT:-8000}` substitution bug in `dockerCommand`; fixed in `108a2d6`.
+  Verified on the live domain: health (DB + Redis), shorten → 301 redirect,
+  click counted in `/stats`. See `docs/deployment.md` → Current deployment.
+- **Watch:** free Postgres expires 2026-10-23 (deleted ~2026-11-06) unless
+  upgraded.
