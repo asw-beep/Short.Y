@@ -27,11 +27,13 @@ services:
     plan: free
     healthCheckPath: /livez
     # Render injects $PORT (default 10000); override the image's CMD to bind to
-    # it and run migrations first. Falls back to 8000 if PORT is unset (local
-    # `docker build && docker run` without Render's env).
+    # it and run migrations first. Plain $PORT only — Render substitutes env
+    # vars into dockerCommand itself, and mangles shell defaults like
+    # ${PORT:-8000} (it produced '10000:-8000}' on the first deploy). This
+    # command only runs on Render, where PORT is always set.
     dockerCommand: >-
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+             uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
